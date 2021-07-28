@@ -73,7 +73,7 @@ def encode_feature(dataset, sps, binding = 'multiply', aggregate = 'sum'):
 def encode_dataset(encoded_feature, aggregate_between_feature = 'sum'):
     '''
     encoded_feature: A list of encoded_features. Each entry is an numpy array with size n * dim.
-    aggregate_between_feature:
+    aggregate_between_feature: 'sum' or 'convolution'
     '''
     m = len(encoded_feature)
     n = encoded_feature[0].shape[0]
