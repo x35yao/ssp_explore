@@ -3,11 +3,13 @@ import pickle
 from scipy.stats import trim_mean
 from sklearn.covariance import MinCovDet
 
-def fetch_data(x, force_success = True):
+def fetch_data(x, n_global_states = None):
     '''
     This function returns the coordinates of bolts and nuts with NO labels.
 
     x: a list of file_path
+    n_global_states: If n_global_states is given, it will only take the data from successful attempt(n_attempt = n_global_states)
+               which will then reduce the number of data but also balance the data
     return: coord_nut, coord_bolt
     '''
     seqs = []
@@ -19,9 +21,9 @@ def fetch_data(x, force_success = True):
                 except EOFError:
                     break
     seqs_success = []
-    if force_success:
+    if n_global_states != None:
         for seq in seqs:
-            if len(seq) == 4:
+            if len(seq) == n_global_states:
                 seqs_success.append(seq)
         seqs = seqs_success
     data_nut = []
@@ -45,10 +47,11 @@ def fetch_data(x, force_success = True):
 
     return coord_nut, coord_bolt
 
-def fetch_data_with_label(x, force_success = True):
+def fetch_data_with_label(x, n_global_states = None):
     '''
     x: a list of file_path
-    force_success: will only take the data from successful attempt which will then reduce the number of data but also balance the data
+    n_global_states: If n_global_states is given, it will only take the data from successful attempt(n_attempt = n_global_states)
+               which will then reduce the number of data
     return: x_nut, y_nut, x_bolt, y_bolt
     '''
     seqs = []
@@ -60,9 +63,9 @@ def fetch_data_with_label(x, force_success = True):
                 except EOFError:
                     break
     seqs_success = []
-    if force_success:
+    if n_global_states != None:
         for seq in seqs:
-            if len(seq) == 4:
+            if len(seq) == n_global_states:
                 seqs_success.append(seq)
         seqs = seqs_success
     test_nut = []
@@ -107,10 +110,11 @@ def fetch_data_with_label(x, force_success = True):
             x_bolt[i][1] += delta
     return x_nut, y_nut, x_bolt, y_bolt
 
-def fetch_data_with_label_per_step(x, force_success = True):
+def fetch_data_with_label_per_step(x, n_global_states = None):
     '''
     x: a list of file_path
-    force_success: will only take the data from successful attempt which will then reduce the number of data but also balance the data
+    n_global_states: If n_global_states is given, it will only take the data from successful attempt(n_attempt = n_global_states)
+               which will then reduce the number of data but also balance the data
 
     return: data_concat: a list with lengh t,  where t is the number of trials. Each entry is is a list with len s, where s(is 4 here) is the
                          number of steps per trial and each entry of this list is another list with lentgh n, where n is the number of items. Each
@@ -130,9 +134,9 @@ def fetch_data_with_label_per_step(x, force_success = True):
                 except EOFError:
                     break
     seqs_success = []
-    if force_success:
+    if n_global_states != None:
         for seq in seqs:
-            if len(seq) == 4:
+            if len(seq) == n_global_states:
                 seqs_success.append(seq)
         seqs = seqs_success
     data_concat = []
@@ -141,36 +145,23 @@ def fetch_data_with_label_per_step(x, force_success = True):
         data_concat_seq = []
         label_seq = []
         for step in seq:
+            label_nut = []
+            label_bolt = []
+            data_nut = [list(obj['pos']) + [0] for obj in step['objs'] if obj['class'] == 'nut']
+            data_bolt = [list(obj['pos']) + [1] for obj in step['objs'] if obj['class'] == 'bolt']
             if step['action'] == 'PUT_NUT_IN_JIG':
-                label_nut = []
-                label_bolt = []
-                data_nut = [list(obj['pos']) + [0] for obj in step['objs'] if obj['class'] == 'nut']
-                data_bolt = [list(obj['pos']) + [1] for obj in step['objs'] if obj['class'] == 'bolt']
-                data_concat_seq.append(data_nut + data_bolt)
                 for i in data_nut:
                     label_nut.append('Nut on table')
                 for i in data_bolt:
                     label_bolt.append('Bolt on table')
-                label_seq.append(label_nut + label_bolt)
             elif step['action'] == 'PUT_BOLT_IN_JIG':
-                label_nut = []
-                label_bolt = []
-                data_nut = [list(obj['pos']) + [0] for obj in step['objs'] if obj['class'] == 'nut']
-                data_bolt = [list(obj['pos']) + [1] for obj in step['objs'] if obj['class'] == 'bolt']
-                data_concat_seq.append(data_nut + data_bolt)
                 for i in data_nut:  # Skechy here, some trial starts from 'Put bolt in jig' and don't have 'Put nut in jig'. Might be troublesome.
                     label_nut.append('Nut on table')
                 for i in data_bolt:
                     label_bolt.append('Bolt on table')
                 if data_nut[0][1] > 0.04:
                     label_nut[0] = 'Nut in jig'
-                label_seq.append(label_nut + label_bolt)
             elif step['action'] == 'ASSEMBLE':
-                label_nut = []
-                label_bolt = []
-                data_nut = [list(obj['pos']) + [0] for obj in step['objs'] if obj['class'] == 'nut']
-                data_bolt = [list(obj['pos']) + [1] for obj in step['objs'] if obj['class'] == 'bolt']
-                data_concat_seq.append(data_nut + data_bolt)
                 for i in data_nut:
                     label_nut.append('Nut on table')
                 for i in data_bolt:
@@ -179,14 +170,7 @@ def fetch_data_with_label_per_step(x, force_success = True):
                     label_nut[0] = 'Nut in jig'
                 if data_bolt[0][1] > 0.06:
                     label_bolt[0] = 'Bolt in jig'
-                label_seq.append(label_nut + label_bolt)
-
             elif step['action'] == 'ASSEMBLED' or step['action'] == None:
-                label_nut = []
-                label_bolt = []
-                data_nut = [list(obj['pos']) + [0] for obj in step['objs'] if obj['class'] == 'nut']
-                data_bolt = [list(obj['pos']) + [1] for obj in step['objs'] if obj['class'] == 'bolt']
-                data_concat_seq.append(data_nut + data_bolt)
                 for i in data_nut:  # Skechy here, some trial starts from 'Put bolt in jig' and don't have 'Put nut in jig'. Might be troublesome.
                     label_nut.append('Nut on table')
                 for i in data_bolt:
@@ -195,7 +179,30 @@ def fetch_data_with_label_per_step(x, force_success = True):
                     label_nut[0] = 'Nut in jig'
                 if data_bolt[0][1] > 0.06:
                     label_bolt[0] = 'Bolt assembled'
-                label_seq.append(label_nut + label_bolt)
+            elif step['action'] == 'CLEAN_BOLT' or step['action'] == 'CLEAN_NUT' or step['action'] == 'Cleaned':
+                pos_bin_origin = [list(obj['pos'])  for obj in step['objs'] if obj['class'] == 'bin_origin'][0]
+                pos_bin_target = [list(obj['pos'])  for obj in step['objs'] if obj['class'] == 'bin_target'][0]
+                r = 0.4
+
+                ind_to_remove_nut = []
+                ind_to_remove_bolt = []
+                for i, pos_obj in enumerate(data_nut):
+                    if is_in_bin(pos_obj, pos_bin_origin, r):
+                        label_nut.append('Object in origin bin')
+                    elif is_in_bin(pos_obj, pos_bin_target, r):
+                        label_nut.append('Object in target bin')
+                    else:
+                        # delete noisy data
+                        label_nut.append('Noise_data')
+                for j, pos_obj in enumerate(data_bolt):
+                    if is_in_bin(pos_obj, pos_bin_origin, r):
+                        label_bolt.append('Object in origin bin')
+                    elif is_in_bin(pos_obj, pos_bin_target, r):
+                        label_bolt.append('Object in target bin')
+                    else:
+                        label_bolt.append('Noise data')
+            data_concat_seq.append(data_nut + data_bolt)
+            label_seq.append(label_nut + label_bolt)
         # data_concat_seq = np.array(data_concat_seq)
         # label_seq = np.array(label_seq)
 
@@ -317,3 +324,14 @@ def balance_data(data, labels):
             data = np.concatenate((data, data_needed), axis = 0)
             labels = np.concatenate((labels, label_needed))
     return data, labels
+
+def is_in_bin(pos_obj, pos_bin, r):
+    # The object center of the bin is 0.15 off in the x direction
+    offset = 0.15
+    dist_to_bin = np.sqrt((pos_obj[0] - (pos_bin[0] - offset))**2 + (pos_obj[2] - pos_bin[2])**2)
+    # print(obj,pos_obj, pos_bin, dist_to_bin)
+    if dist_to_bin < r:
+        # The radius of the bowl is greater than 0.4 but it is hard to grasp at the edge.
+        return True
+    else:
+        return False
