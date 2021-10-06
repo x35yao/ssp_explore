@@ -2,6 +2,8 @@ import numpy as np
 import pickle
 from scipy.stats import trim_mean
 from sklearn.covariance import MinCovDet
+from sklearn.preprocessing import MultiLabelBinarizer
+import itertools
 
 def fetch_data(x, n_global_states = None):
     '''
@@ -47,70 +49,70 @@ def fetch_data(x, n_global_states = None):
 
     return coord_nut, coord_bolt
 
-def fetch_data_with_label(x, n_global_states = None):
-    '''
-    x: a list of file_path
-    n_global_states: If n_global_states is given, it will only take the data from successful attempt(n_attempt = n_global_states)
-               which will then reduce the number of data
-    return: x_nut, y_nut, x_bolt, y_bolt
-    '''
-    seqs = []
-    for file_path in x:
-        with open(file_path, "rb") as logfile:
-            while True:
-                try:
-                    seqs.append(pickle.load(logfile))
-                except EOFError:
-                    break
-    seqs_success = []
-    if n_global_states != None:
-        for seq in seqs:
-            if len(seq) == n_global_states:
-                seqs_success.append(seq)
-        seqs = seqs_success
-    test_nut = []
-    test_bolt = []
-    for seq in seqs:
-        for step in seq:
-            if step['action'] == 'PUT_NUT_IN_JIG':
-                data = [obj['pos'] for obj in step['objs'] if obj['class'] == 'nut'][0]
-                test_nut.append(list(data) + ['Nut on table'])
-            elif step['action'] == 'PUT_BOLT_IN_JIG':
-                data = [obj['pos'] for obj in step['objs'] if obj['class'] == 'bolt'][0]
-                if data[1] < 0.03:
-                    test_bolt.append(list(data) + ['Bolt on table'])
-            elif step['action'] == 'ASSEMBLE':
-                data_nut = [obj['pos'] for obj in step['objs'] if obj['class'] == 'nut'][0]
-                if data_nut[1] < 0.02: # Wrong labeld data
-                    pass
-                else:
-                    test_nut.append(list(data_nut) + ['Nut in jig'])
-                data_bolt = [obj['pos'] for obj in step['objs'] if obj['class'] == 'bolt'][0]
-                if data_bolt[1] < 0.06: # Wrong labeld data
-                    pass
-                else:
-                    test_bolt.append(list(data_bolt) + ['Bolt in jig'])
-            elif step['action'] == 'ASSEMBLED' or step['action'] == None:
-                data = [obj['pos'] for obj in step['objs'] if obj['class'] == 'bolt'][0]
-                # test_bolt.append(list(data) + ['Bolt assembled'])
-                if data[2] > -0.6:
-                    pass
-                else:
-                    test_bolt.append(list(data) + ['Bolt assembled'])
-    data_nut = np.array(test_nut)
-    data_bolt = np.array(test_bolt)
-    x_nut = data_nut[:,:3].astype(np.float)
-    y_nut = data_nut[:,3]
-    x_bolt = data_bolt[:,:3].astype(np.float)
-    y_bolt = data_bolt[:,3]
-    # Seperate data a little more
-    delta = 0.01
-    for i, val in enumerate(x_bolt[:,1]):
-        if val > 0.064:
-            x_bolt[i][1] += delta
-    return x_nut, y_nut, x_bolt, y_bolt
+# def fetch_data_with_label(x, n_global_states = None):
+#     '''
+#     x: a list of file_path
+#     n_global_states: If n_global_states is given, it will only take the data from successful attempt(n_attempt = n_global_states)
+#                which will then reduce the number of data
+#     return: x_nut, y_nut, x_bolt, y_bolt
+#     '''
+#     seqs = []
+#     for file_path in x:
+#         with open(file_path, "rb") as logfile:
+#             while True:
+#                 try:
+#                     seqs.append(pickle.load(logfile))
+#                 except EOFError:
+#                     break
+#     seqs_success = []
+#     if n_global_states != None:
+#         for seq in seqs:
+#             if len(seq) == n_global_states:
+#                 seqs_success.append(seq)
+#         seqs = seqs_success
+#     test_nut = []
+#     test_bolt = []
+#     for seq in seqs:
+#         for step in seq:
+#             if step['action'] == 'PUT_NUT_IN_JIG':
+#                 data = [obj['pos'] for obj in step['objs'] if obj['class'] == 'nut'][0]
+#                 test_nut.append(list(data) + ['Nut on table'])
+#             elif step['action'] == 'PUT_BOLT_IN_JIG':
+#                 data = [obj['pos'] for obj in step['objs'] if obj['class'] == 'bolt'][0]
+#                 if data[1] < 0.03:
+#                     test_bolt.append(list(data) + ['Bolt on table'])
+#             elif step['action'] == 'ASSEMBLE':
+#                 data_nut = [obj['pos'] for obj in step['objs'] if obj['class'] == 'nut'][0]
+#                 if data_nut[1] < 0.02: # Wrong labeld data
+#                     pass
+#                 else:
+#                     test_nut.append(list(data_nut) + ['Nut in jig'])
+#                 data_bolt = [obj['pos'] for obj in step['objs'] if obj['class'] == 'bolt'][0]
+#                 if data_bolt[1] < 0.06: # Wrong labeld data
+#                     pass
+#                 else:
+#                     test_bolt.append(list(data_bolt) + ['Bolt in jig'])
+#             elif step['action'] == 'ASSEMBLED' or step['action'] == None:
+#                 data = [obj['pos'] for obj in step['objs'] if obj['class'] == 'bolt'][0]
+#                 # test_bolt.append(list(data) + ['Bolt assembled'])
+#                 if data[2] > -0.6:
+#                     pass
+#                 else:
+#                     test_bolt.append(list(data) + ['Bolt assembled'])
+#     data_nut = np.array(test_nut)
+#     data_bolt = np.array(test_bolt)
+#     x_nut = data_nut[:,:3].astype(np.float)
+#     y_nut = data_nut[:,3]
+#     x_bolt = data_bolt[:,:3].astype(np.float)
+#     y_bolt = data_bolt[:,3]
+#     # Seperate data a little more
+#     delta = 0.01
+#     for i, val in enumerate(x_bolt[:,1]):
+#         if val > 0.064:
+#             x_bolt[i][1] += delta
+#     return x_nut, y_nut, x_bolt, y_bolt
 
-def fetch_data_with_label_per_step(x, n_global_states = None):
+def fetch_data_with_label(x, n_global_states = None):
     '''
     x: a list of file_path
     n_global_states: If n_global_states is given, it will only take the data from successful attempt(n_attempt = n_global_states)
@@ -237,35 +239,55 @@ def int_to_label(labels, label_seq):
         result.append(label_seq[int_label])
     return np.array(result)
 
+# def divide_data(x, y, n_samples):
+#     '''
+#     Divide data into training set and test set.
+#     x: all the data with shape n_data by n_dimension
+#     y: lables for all the data with n_data entries
+#     n_samples: number of samples for training set
+#
+#     return:
+#     x_train, y_train, x_test, y_test
+#     '''
+#     n_data = x.shape[0]
+#     n_training = len(set(y)) * n_samples
+#     n_test = n_data - n_training
+#     x_train = np.empty((n_training, 3))
+#     y_train = np.empty(n_training, dtype = y.dtype)
+#     x_test = np.empty((n_test,3))
+#     y_test = np.empty(n_test, dtype = y.dtype)
+#
+#     train_inds = []
+#     for i, label in enumerate(set(y)):
+#         ind = np.where(y == label)[0]
+#         selected_ind = np.random.choice(ind, n_samples, replace = False)
+#         train_inds += selected_ind.tolist()
+#         x_train[i * n_samples:(i + 1) * n_samples,:] = x[selected_ind, :]
+#         y_train[i * n_samples:(i + 1) * n_samples] = y[selected_ind]
+#     inds = np.arange(n_data)
+#     test_inds = np.delete(inds, np.array(train_inds))
+#     x_test = x[test_inds,:]
+#     y_test = y[test_inds]
+#
+#     return x_train, y_train, x_test, y_test
+
 def divide_data(x, y, n_samples):
     '''
     Divide data into training set and test set.
-    x: all the data with shape n_data by n_dimension
-    y: lables for all the data with n_data entries
+    x: list of data with length n. n is the number of trials recorded
+    y: list of labels with length n. For each entry, labels at each step are recorded.
     n_samples: number of samples for training set
 
     return:
-    x_train, y_train, x_test, y_test
+    x_train, y_train, x_test, y_test. They are all lists(maybe change to np array later?).
     '''
-    n_data = x.shape[0]
-    n_training = len(set(y)) * n_samples
-    n_test = n_data - n_training
-    x_train = np.empty((n_training, 3))
-    y_train = np.empty(n_training, dtype = y.dtype)
-    x_test = np.empty((n_test,3))
-    y_test = np.empty(n_test, dtype = y.dtype)
-
-    train_inds = []
-    for i, label in enumerate(set(y)):
-        ind = np.where(y == label)[0]
-        selected_ind = np.random.choice(ind, n_samples, replace = False)
-        train_inds += selected_ind.tolist()
-        x_train[i * n_samples:(i + 1) * n_samples,:] = x[selected_ind, :]
-        y_train[i * n_samples:(i + 1) * n_samples] = y[selected_ind]
-    inds = np.arange(n_data)
-    test_inds = np.delete(inds, np.array(train_inds))
-    x_test = x[test_inds,:]
-    y_test = y[test_inds]
+    n_data = len(x)
+    ind_train = np.random.choice(n_data, n_samples)
+    ind_test = np.delete(np.arange(n_data), ind_train)
+    x_train = [x[i] for i in ind_train]
+    y_train = [y[i] for i in ind_train]
+    x_test = [x[i] for i in ind_test]
+    y_test = [y[i] for i in ind_test]
 
     return x_train, y_train, x_test, y_test
 
@@ -335,3 +357,221 @@ def is_in_bin(pos_obj, pos_bin, r):
         return True
     else:
         return False
+
+def process_data_3d(selected_data, selected_label, with_anchor, task = 'assembly'):
+    '''
+    This method process the 4-d data(3-d coordinates + 1-d object kind) by:
+     1. Balancing the data
+     2. Add anchor object information if needed
+     3. Add noise to coordinates
+     4. Change the index encoding(0 for nut, 1 for bolt) to distributed encodeing(ex. [0.8, 0.2] for nut and [0.9, 0.1] for bolt)
+    '''
+    u_coord = 0  # The average shift between the approximated coordinates and ground truth
+    sigma_coord = 0.006
+    u_kind = 0.1
+    sigma_kind = 0.05
+    u_anchor = 0.1
+    sigma_anchor= 0.05
+
+    selected_data = np.array(list(itertools.chain.from_iterable(data[i])))
+    selected_label = np.array(list(itertools.chain.from_iterable(label[i])))
+    # selected_data_balanced, selected_label_balanced = balance_data(selected_data, selected_label)
+    selected_label_int = label_to_int(selected_label)
+    # Object coordinates information
+    coord = selected_data[:,0:3]
+    obj_kind = selected_data[:, 3]
+    noise = np.random.normal(u_coord, sigma_coord, coord.shape)
+    coord_noisy = coord + noise
+    coord_noisy_balanced, selected_label_balanced = balance_data(coord_noisy, selected_label_int)
+    # Object kind information
+    kind_onehot = label_to_onehot(obj_kind)
+    kind_distributed = onehot_to_distributed(kind_onehot, u_kind, sigma_kind)
+    kind_distributed_balanced, selected_label_balanced = balance_data(kind_distributed, selected_label_int)
+    # Object anchor information
+    anchor_label = get_anchor(selected_label,task)
+    anchor_onehot = label_to_onehot(anchor_label)
+    anchor_distributed = onehot_to_distributed(anchor_onehot,  u_anchor, sigma_anchor)
+    anchor_distributed_balanced, selected_label_balanced = balance_data(anchor_distributed, selected_label_int)
+
+    if with_anchor:
+        data_concat = [coord_noisy_balanced, kind_distributed_balanced, anchor_distributed_balanced]
+    else:
+        data_concat = [coord_noisy_balanced, kind_distributed_balanced]
+    return data_concat, selected_label_int
+
+def process_batch_data_3d(data, label, with_anchor, task = 'assembly'):
+    '''
+    This method process the 4-d data(3-d coordinates + 1-d object kind) by:
+     1. Balancing the data
+     2. Add anchor object information if needed
+     3. Add noise to coordinates
+     4. Change the index encoding(0 for nut, 1 for bolt) to distributed encodeing(ex. [0.8, 0.2] for nut and [0.9, 0.1] for bolt)
+    '''
+    u_coord = 0  # The average shift between the approximated coordinates and ground truth
+    sigma_coord = 0.006
+    u_kind = 0.1
+    sigma_kind = 0.05
+    u_anchor = 0.1
+    sigma_anchor= 0.05
+    for i, _ in enumerate(data):
+        selected_data = np.array(list(itertools.chain.from_iterable(data[i])))
+        selected_label = np.array(list(itertools.chain.from_iterable(label[i])))
+        # selected_data_balanced, selected_label_balanced = balance_data(selected_data, selected_label)
+        selected_label_int = label_to_int(selected_label)
+        # Object coordinates information
+        coord = selected_data[:,0:3]
+        obj_kind = selected_data[:, 3]
+        noise = np.random.normal(u_coord, sigma_coord, coord.shape)
+        coord_noisy = coord + noise
+
+        # Object kind information
+        kind_onehot = label_to_onehot(obj_kind)
+        kind_distributed = onehot_to_distributed(kind_onehot, u_kind, sigma_kind)
+        # Object anchor information
+        anchor_label = get_anchor(selected_label,task)
+        anchor_onehot = label_to_onehot(anchor_label)
+        anchor_distributed = onehot_to_distributed(anchor_onehot,  u_anchor, sigma_anchor)
+
+        if with_anchor:
+            selected_data_concat = np.concatenate((coord_noisy, kind_distributed, anchor_distributed), axis = 1)
+        else:
+            selected_data_concat = np.concatenate((coord_noisy, kind_distributed), axis = 1)
+        selected_data_concat_balanced, selected_labels_balanced = balance_data(selected_data_concat, selected_label_int)
+        if i == 0:
+            data_concat = selected_data_concat_balanced
+        else:
+            data_concat = np.append(data_concat, selected_data_concat, axis = 0)
+    return data_concat, selected_labels_balanced
+
+def label_to_onehot(x):
+    '''
+    x: is a 1-d array that contains the labels
+
+    return: an n * d array, n is the number of data. d is the number of classes.
+    '''
+    n_data = x.shape[0]
+    x = [[i] for i in x]
+    one_hot = MultiLabelBinarizer()
+    result = one_hot.fit_transform(x)
+    return result
+
+def onehot_to_distributed(x, u, sigma):
+    '''
+    x: an n * d array, n is the number of data. d is the number of classes.
+    u: is the mean of the noise
+    sigma: is the variance of he noise
+
+    return: an n * d array, n is the number of data. d is the number of classes.
+    '''
+    n_data = x.shape[0]
+    n_classes = x.shape[1]
+    noise = np.random.normal(u, sigma, n_data)
+    x_noisy = abs(x - np.column_stack((noise, noise)))
+    return x_noisy
+
+def get_anchor(selected_label_balanced, task = 'assembly'):
+    '''
+    Get anchor information based on the label information.
+    '''
+    n_data = selected_label_balanced.shape[0]
+    result = np.zeros(n_data)
+    if task == 'assembly':
+        # Anchor object information
+        ind_table = np.concatenate((np.where(selected_label_balanced == 'Nut on table')[0], np.where(selected_label_balanced == 'Bolt on table')[0]))
+        ind_jig = np.delete(np.arange(n_data), ind_table)
+        result[ind_table] = 0
+        result[ind_jig] = 1
+
+    elif task == 'bin_picking':
+        ind_bin_origin = np.where(selected_label_balanced == 'Object in origin bin')[0]
+        ind_bin_target = np.delete(np.arange(n_data), ind_bin_origin)
+        result[ind_bin_origin] = 0
+        result[ind_bin_target] = 1
+    return result
+
+def process_data_ssp(selected_data, selected_label, with_anchor, binding, aggregate, dim, wrap_feature = False, task = 'assembly'):
+    '''
+    This method process the 4-d data(3-d coordinates + 1-d object kind) by:
+     1. Balancing the data
+     2. Add anchor object information if needed
+     3. Add noise to coordinates
+     4. Change the index encoding(0 for nut, 1 for bolt) to distributed encodeing(ex. [0.8, 0.2] for nut and [0.9, 0.1] for bolt)
+    '''
+
+    u_coord = 0  # The average shift between the approximated coordinates and ground truth
+    sigma_coord = 0.006
+    u_kind = 0.1
+    sigma_kind = 0.05
+    u_anchor = 0.1
+    sigma_anchor= 0.05
+
+    selected_data_balanced, selected_label_balanced = balance_data(selected_data, selected_label)
+    selected_label_int = label_to_int(selected_label_balanced)
+
+    # Object coordinates information
+    coord = selected_data_balanced[:,0:3]
+    obj_kind = selected_data_balanced[:, 3]
+    noise = np.random.normal(u_coord, sigma_coord, coord.shape)
+    coord_noisy = coord + noise
+
+    # Object kind information
+    ind_nut = np.where(obj_kind == 0)[0]
+    ind_bolt = np.where(obj_kind == 1)[0]
+    n_data = coord.shape[0]
+    one_hot_kind = np.zeros((n_data,2))
+    one_hot_kind[np.arange(obj_kind.size),obj_kind.astype(int)] = 1
+    noise_kind = np.random.normal(u_kind, sigma_kind, obj_kind.size)
+    kind_noisy = abs(one_hot_kind - np.column_stack((noise_kind, noise_kind)))
+
+    assert dim is not None, 'Dimension of semantic pointer is not provided'
+    assert binding is not None, 'Binding types for each entry is not provided'
+    assert aggregate is not None, 'Aggregation types between features are not provided'
+    x_axis_sp = make_good_unitary(dim)
+    y_axis_sp = make_good_unitary(dim)
+    z_axis_sp = make_good_unitary(dim)
+
+    bolt_sp = make_good_unitary(dim)
+    nut_sp = make_good_unitary(dim)
+
+    table_sp = make_good_unitary(dim)
+    jig_sp = make_good_unitary(dim)
+    bin_origin_sp = make_good_unitary(dim)
+    bin_target_sp = make_good_unitary(dim)
+    if task == 'assembly':
+        # Anchor object information
+        ind_table = np.concatenate((np.where(selected_label_balanced == 'Nut on table')[0], np.where(selected_label_balanced == 'Bolt on table')[0]))
+        ind_jig = np.delete(np.arange(n_data), ind_table)
+        one_hot_anchor = np.zeros((n_data,2))
+        one_hot_anchor[ind_table,0] = 1
+        one_hot_anchor[ind_jig,1] = 1
+        noise_anchor = np.random.normal(u_anchor, sigma_anchor, obj_kind.size)
+        anchor_noisy = abs(one_hot_anchor - np.column_stack((noise_anchor, noise_anchor)))
+
+        coord_sp = encode_feature(coord_noisy, [x_axis_sp, y_axis_sp, z_axis_sp], binding = binding[0], aggregate = aggregate[0])
+        kind_sp = encode_feature(kind_noisy, [nut_sp, bolt_sp], binding = binding[1], aggregate = aggregate[1])
+        anchor_sp = encode_feature(anchor_noisy, [table_sp, jig_sp], binding = binding[2], aggregate = aggregate[2])
+
+    elif task == 'bin_picking':
+        ind_bin_origin = np.where(selected_label_balanced == 'Object in origin bin')[0]
+        ind_bin_target = np.delete(np.arange(n_data), ind_bin_origin)
+        one_hot_anchor = np.zeros((n_data,2))
+        one_hot_anchor[ind_bin_origin,0] = 1
+        one_hot_anchor[ind_bin_target,1] = 1
+        noise_anchor = np.random.normal(u_anchor, sigma_anchor, obj_kind.size)
+        anchor_noisy = abs(one_hot_anchor - np.column_stack((noise_anchor, noise_anchor)))
+        coord_sp = encode_feature(coord_noisy, [x_axis_sp, y_axis_sp, z_axis_sp], binding = binding[0], aggregate = aggregate[0])
+        kind_sp = encode_feature(kind_noisy, [nut_sp, bolt_sp], binding = binding[1], aggregate = aggregate[1])
+        anchor_sp = encode_feature(anchor_noisy, [bin_origin_sp, bin_target_sp], binding = binding[2], aggregate = aggregate[2])
+    tag1 = make_good_unitary(dim)
+    tag2 = make_good_unitary(dim)
+    tag3 = make_good_unitary(dim)
+
+    if wrap_feature == True:
+        coord_sp = (tag1 * spa.SemanticPointer(coord_sp)).v
+        kind_sp = (tag2 * spa.SemanticPointer(kind_sp)).v
+        anchor_sp = (tag3 * spa.SemanticPointer(anchor_sp)).v
+    if with_anchor:
+        data_concat = [coord_sp, kind_sp, anchor_sp]
+    else:
+        data_concat = [coord_sp, kind_sp]
+    return data_concat, selected_label_int

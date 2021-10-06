@@ -4,7 +4,7 @@ sys.path.append('..')
 
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from utils.data import fetch_data_with_label_per_step, label_to_int, balance_data
+from utils.data import fetch_data_with_label, label_to_int, balance_data , process_data_ssp
 from utils.plotting import plot
 from utils.clustering import agglomerative, kmeans, gaussian_mixture, Clustering
 from utils.encoding import make_good_unitary, encode_feature, encode_dataset
@@ -13,91 +13,9 @@ import itertools
 import argparse
 import glob
 
-def process_data(selected_data, selected_label, with_anchor, binding, aggregate, dim, wrap_feature = False, task = 'assembly'):
-    '''
-    This method process the 4-d data(3-d coordinates + 1-d object kind) by:
-     1. Balancing the data
-     2. Add anchor object information if needed
-     3. Change the index encoding(0 for nut, 1 for bolt) to distributed encodeing(ex. [0.8, 0.2] for nut and [0.9, 0.1] for bolt)
-    '''
-
-    u_coord = 0  # The average shift between the approximated coordinates and ground truth
-    sigma_coord = 0.006
-    u_kind = 0.1
-    sigma_kind = 0.05
-    u_anchor = 0.1
-    sigma_anchor= 0.05
-
-    selected_data_balanced, selected_label_balanced = balance_data(selected_data, selected_label)
-    selected_label_int = label_to_int(selected_label_balanced)
-
-    # Object coordinates information
-    coord = selected_data_balanced[:,0:3]
-    obj_kind = selected_data_balanced[:, 3]
-    noise = np.random.normal(u_coord, sigma_coord, coord.shape)
-    coord_noisy = coord + noise
-
-    # Object kind information
-    ind_nut = np.where(obj_kind == 0)[0]
-    ind_bolt = np.where(obj_kind == 1)[0]
-    n_data = coord.shape[0]
-    one_hot_kind = np.zeros((n_data,2))
-    one_hot_kind[np.arange(obj_kind.size),obj_kind.astype(int)] = 1
-    noise_kind = np.random.normal(u_kind, sigma_kind, obj_kind.size)
-    kind_noisy = abs(one_hot_kind - np.column_stack((noise_kind, noise_kind)))
-
-    assert dim is not None, 'Dimension of semantic pointer is not provided'
-    assert binding is not None, 'Binding types for each entry is not provided'
-    assert aggregate is not None, 'Aggregation types between features are not provided'
-    x_axis_sp = make_good_unitary(dim)
-    y_axis_sp = make_good_unitary(dim)
-    z_axis_sp = make_good_unitary(dim)
-
-    bolt_sp = make_good_unitary(dim)
-    nut_sp = make_good_unitary(dim)
-
-    table_sp = make_good_unitary(dim)
-    jig_sp = make_good_unitary(dim)
-    bin_origin_sp = make_good_unitary(dim)
-    bin_target_sp = make_good_unitary(dim)
-    if task == 'assembly':
-        # Anchor object information
-        ind_table = np.concatenate((np.where(selected_label_balanced == 'Nut on table')[0], np.where(selected_label_balanced == 'Bolt on table')[0]))
-        ind_jig = np.delete(np.arange(n_data), ind_table)
-        one_hot_anchor = np.zeros((n_data,2))
-        one_hot_anchor[ind_table,0] = 1
-        one_hot_anchor[ind_jig,1] = 1
-        noise_anchor = np.random.normal(u_anchor, sigma_anchor, obj_kind.size)
-        anchor_noisy = abs(one_hot_anchor - np.column_stack((noise_anchor, noise_anchor)))
-
-        coord_sp = encode_feature(coord_noisy, [x_axis_sp, y_axis_sp, z_axis_sp], binding = binding[0], aggregate = aggregate[0])
-        kind_sp = encode_feature(kind_noisy, [nut_sp, bolt_sp], binding = binding[1], aggregate = aggregate[1])
-        anchor_sp = encode_feature(anchor_noisy, [table_sp, jig_sp], binding = binding[2], aggregate = aggregate[2])
-
-    elif task == 'bin_picking':
-        ind_bin_origin = np.where(selected_label_balanced == 'Object in origin bin')[0]
-        ind_bin_target = np.delete(np.arange(n_data), ind_bin_origin)
-        one_hot_anchor = np.zeros((n_data,2))
-        one_hot_anchor[ind_bin_origin,0] = 1
-        one_hot_anchor[ind_bin_target,1] = 1
-        noise_anchor = np.random.normal(u_anchor, sigma_anchor, obj_kind.size)
-        anchor_noisy = abs(one_hot_anchor - np.column_stack((noise_anchor, noise_anchor)))
-        coord_sp = encode_feature(coord_noisy, [x_axis_sp, y_axis_sp, z_axis_sp], binding = binding[0], aggregate = aggregate[0])
-        kind_sp = encode_feature(kind_noisy, [nut_sp, bolt_sp], binding = binding[1], aggregate = aggregate[1])
-        anchor_sp = encode_feature(anchor_noisy, [bin_origin_sp, bin_target_sp], binding = binding[2], aggregate = aggregate[2])
-    tag1 = make_good_unitary(dim)
-    tag2 = make_good_unitary(dim)
-    tag3 = make_good_unitary(dim)
-
-    if wrap_feature == True:
-        coord_sp = (tag1 * spa.SemanticPointer(coord_sp)).v
-        kind_sp = (tag2 * spa.SemanticPointer(kind_sp)).v
-        anchor_sp = (tag3 * spa.SemanticPointer(anchor_sp)).v
-    if with_anchor:
-        data_concat = [coord_sp, kind_sp, anchor_sp]
-    else:
-        data_concat = [coord_sp, kind_sp]
-    return data_concat, selected_label_int
+'''
+run this code: python ./encoding_ssp.py -t bin_picking -al gaussian -an False -af cosine -b power multiply multiply -ag multiply sum sum -ag_bf sum -d 256 -w True
+'''
 
 def test_ssp(task, algorithm, with_anchor, affinity, binding, aggregate, aggregate_between_feature, dim, wrap_feature):
     if task == 'assembly':
@@ -110,7 +28,7 @@ def test_ssp(task, algorithm, with_anchor, affinity, binding, aggregate, aggrega
         target_dir = '../../roboSim/data/bin_picking/*/*.pickle'
     logfile_path = glob.glob(target_dir)
     #coordinates and object kind for nut and bolt
-    data, label = fetch_data_with_label_per_step(logfile_path, n_global_states)
+    data, label = fetch_data_with_label(logfile_path, n_global_states)
     n_test = 100
     result = []
     rand_score = 0

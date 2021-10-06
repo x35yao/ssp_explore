@@ -2,7 +2,7 @@ import numpy as np
 import sys
 sys.path.append('..')
 
-from utils.data import fetch_data_with_label_per_step, label_to_int, balance_data
+from utils.data import fetch_data_with_label, label_to_int, balance_data, process_data_3d
 from utils.clustering import Clustering
 from utils.encoding import make_good_unitary, encode_feature
 from sklearn.metrics import adjusted_rand_score
@@ -14,60 +14,6 @@ import glob
 run this file : python ./encoding_3d.py -t assembly -al gaussian -an True -af p_norm, euclidean, euclidean
 '''
 
-def process_data(selected_data, selected_label, with_anchor, task = 'assembly'):
-    '''
-    This method process the 4-d data(3-d coordinates + 1-d object kind) by:
-     1. Balancing the data
-     2. Add anchor object information if needed
-     3. Change the index encoding(0 for nut, 1 for bolt) to distributed encodeing(ex. [0.8, 0.2] for nut and [0.9, 0.1] for bolt)
-    '''
-    u_coord = 0  # The average shift between the approximated coordinates and ground truth
-    sigma_coord = 0.006
-    u_kind = 0.1
-    sigma_kind = 0.05
-    u_anchor = 0.1
-    sigma_anchor= 0.05
-
-    selected_data_balanced, selected_label_balanced = balance_data(selected_data, selected_label)
-    selected_label_int = label_to_int(selected_label_balanced)
-
-    # Object coordinates information
-    coord = selected_data_balanced[:,0:3]
-    obj_kind = selected_data_balanced[:, 3]
-    noise = np.random.normal(u_coord, sigma_coord, coord.shape)
-    coord_noisy = coord + noise
-
-    # Object kind information
-    ind_nut = np.where(obj_kind == 0)[0]
-    ind_bolt = np.where(obj_kind == 1)[0]
-    n_data = coord.shape[0]
-    one_hot_kind = np.zeros((n_data,2))
-    one_hot_kind[np.arange(obj_kind.size),obj_kind.astype(int)] = 1
-    noise_kind = np.random.normal(u_kind, sigma_kind, obj_kind.size)
-    kind_noisy = abs(one_hot_kind - np.column_stack((noise_kind, noise_kind)))
-    if task == 'assembly':
-        # Anchor object information
-        ind_table = np.concatenate((np.where(selected_label_balanced == 'Nut on table')[0], np.where(selected_label_balanced == 'Bolt on table')[0]))
-        ind_jig = np.delete(np.arange(n_data), ind_table)
-        one_hot_anchor = np.zeros((n_data,2))
-        one_hot_anchor[ind_table,0] = 1
-        one_hot_anchor[ind_jig,1] = 1
-        noise_anchor = np.random.normal(u_anchor, sigma_anchor, obj_kind.size)
-        anchor_noisy = abs(one_hot_anchor - np.column_stack((noise_anchor, noise_anchor)))
-
-    elif task == 'bin_picking':
-        ind_bin_origin = np.where(selected_label_balanced == 'Object in origin bin')[0]
-        ind_bin_target = np.delete(np.arange(n_data), ind_bin_origin)
-        one_hot_anchor = np.zeros((n_data,2))
-        one_hot_anchor[ind_bin_origin,0] = 1
-        one_hot_anchor[ind_bin_target,1] = 1
-        noise_anchor = np.random.normal(u_anchor, sigma_anchor, obj_kind.size)
-        anchor_noisy = abs(one_hot_anchor - np.column_stack((noise_anchor, noise_anchor)))
-    if with_anchor:
-        data_concat = [coord_noisy, kind_noisy, anchor_noisy]
-    else:
-        data_concat = [coord_noisy, kind_noisy]
-    return data_concat, selected_label_int
 
 def test_3d(task, algorithm, with_anchor, affinity):
     if task == 'assembly':
@@ -80,7 +26,7 @@ def test_3d(task, algorithm, with_anchor, affinity):
         target_dir = '../../roboSim/data/bin_picking/*/*.pickle'
     logfile_path = glob.glob(target_dir)
     #coordinates and object kind for nut and bolt
-    data, label = fetch_data_with_label_per_step(logfile_path, n_global_states)
+    data, label = fetch_data_with_label(logfile_path, n_global_states)
     n_test = 100
     result = []
     rand_score = 0
