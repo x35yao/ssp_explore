@@ -86,6 +86,7 @@ def kmeans(X, n_clusters, affinity, init_centroids = 'random', n_init = 10, max_
     labels :The extimated labels for each datapoint.
     centers: The centers of each cluster.
     '''
+    
     if len(set(affinity)) == 1: # Apply the same affinity to different features.
         affinity = affinity[0]
         if isinstance(X, list):

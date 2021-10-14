@@ -42,7 +42,7 @@ def test_ssp(task, algorithm, with_anchor, affinity, binding, aggregate, aggrega
             # Skip cases when there is only one datapoint
             n_skip += 1
             continue
-        data_concat, selected_label_int = process_data(selected_data, selected_label, with_anchor, binding, aggregate, dim, wrap_feature,task)
+        data_concat, selected_label_int = process_data_ssp(selected_data, selected_label, with_anchor, binding, aggregate, dim, wrap_feature,task)
         data_encoded = encode_dataset(data_concat, aggregate_between_feature)
         C = Clustering(data_encoded, algorithm, affinity, n_clusters, thres = None, p = -2)
         estimated_label = C.predict()

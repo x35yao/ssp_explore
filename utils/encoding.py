@@ -93,7 +93,6 @@ def encode_feature(dataset, sps, binding = 'multiply', aggregate = 'sum'):
 
     return: a n * d array where n is the number of datapoints and d is the dimension of the sps.
     '''
-    
     n = dataset.shape[0]
     dim = sps[0].v.shape[0]
     result = np.zeros((n, dim))

@@ -40,7 +40,7 @@ def test_3d(task, algorithm, with_anchor, affinity):
             # Skip cases when there is only one datapoint
             n_skip += 1
             continue
-        data_concat, selected_label_int = process_data(selected_data, selected_label, with_anchor, task)
+        data_concat, selected_label_int = process_data_3d(selected_data, selected_label, with_anchor, task)
         if with_anchor:
             affinity = affinity
         else:
@@ -54,6 +54,7 @@ def test_3d(task, algorithm, with_anchor, affinity):
             n_success +=1
         average_rand = rand_score / n_test
         success_rate = n_success / n_test * 100
+
     print(f'Algorithm is {algorithm}, Affinity is {affinity}, With anchor is {with_anchor}. \n \
             The average rand score is {average_rand}.\n \
             The success rate is {success_rate}% \n\

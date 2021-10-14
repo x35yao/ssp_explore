@@ -4,6 +4,7 @@ from scipy.stats import trim_mean
 from sklearn.covariance import MinCovDet
 from sklearn.preprocessing import MultiLabelBinarizer
 import itertools
+from utils.encoding import make_good_unitary, encode_feature, encode_dataset
 
 def fetch_data(x, n_global_states = None):
     '''
@@ -195,7 +196,7 @@ def fetch_data_with_label(x, n_global_states = None):
                         label_nut.append('Object in target bin')
                     else:
                         # delete noisy data
-                        label_nut.append('Noise_data')
+                        label_nut.append('Noise data')
                 for j, pos_obj in enumerate(data_bolt):
                     if is_in_bin(pos_obj, pos_bin_origin, r):
                         label_bolt.append('Object in origin bin')
@@ -284,10 +285,17 @@ def divide_data(x, y, n_samples):
     n_data = len(x)
     ind_train = np.random.choice(n_data, n_samples)
     ind_test = np.delete(np.arange(n_data), ind_train)
-    x_train = [x[i] for i in ind_train]
-    y_train = [y[i] for i in ind_train]
-    x_test = [x[i] for i in ind_test]
-    y_test = [y[i] for i in ind_test]
+    if isinstance(x, list):
+        x_train = [x[i] for i in ind_train]
+        y_train = [y[i] for i in ind_train]
+        x_test = [x[i] for i in ind_test]
+        y_test = [y[i] for i in ind_test]
+    elif isinstance(x, np.ndarray):
+         # x is an array
+         x_train = x[ind_train, :]
+         y_train = y[ind_train]
+         x_test = x[ind_test, :]
+         y_test = y[ind_test]
 
     return x_train, y_train, x_test, y_test
 
@@ -373,8 +381,6 @@ def process_data_3d(selected_data, selected_label, with_anchor, task = 'assembly
     u_anchor = 0.1
     sigma_anchor= 0.05
 
-    selected_data = np.array(list(itertools.chain.from_iterable(data[i])))
-    selected_label = np.array(list(itertools.chain.from_iterable(label[i])))
     # selected_data_balanced, selected_label_balanced = balance_data(selected_data, selected_label)
     selected_label_int = label_to_int(selected_label)
     # Object coordinates information
@@ -397,7 +403,7 @@ def process_data_3d(selected_data, selected_label, with_anchor, task = 'assembly
         data_concat = [coord_noisy_balanced, kind_distributed_balanced, anchor_distributed_balanced]
     else:
         data_concat = [coord_noisy_balanced, kind_distributed_balanced]
-    return data_concat, selected_label_int
+    return data_concat, selected_label_balanced
 
 def process_batch_data_3d(data, label, with_anchor, task = 'assembly'):
     '''
@@ -407,41 +413,138 @@ def process_batch_data_3d(data, label, with_anchor, task = 'assembly'):
      3. Add noise to coordinates
      4. Change the index encoding(0 for nut, 1 for bolt) to distributed encodeing(ex. [0.8, 0.2] for nut and [0.9, 0.1] for bolt)
     '''
-    u_coord = 0  # The average shift between the approximated coordinates and ground truth
-    sigma_coord = 0.006
-    u_kind = 0.1
-    sigma_kind = 0.05
-    u_anchor = 0.1
-    sigma_anchor= 0.05
+
     for i, _ in enumerate(data):
         selected_data = np.array(list(itertools.chain.from_iterable(data[i])))
         selected_label = np.array(list(itertools.chain.from_iterable(label[i])))
         # selected_data_balanced, selected_label_balanced = balance_data(selected_data, selected_label)
-        selected_label_int = label_to_int(selected_label)
-        # Object coordinates information
-        coord = selected_data[:,0:3]
-        obj_kind = selected_data[:, 3]
-        noise = np.random.normal(u_coord, sigma_coord, coord.shape)
-        coord_noisy = coord + noise
+        if 'Noise data' in selected_label:
+            continue
+        data_concat_balanced, selected_label_balanced = process_data_3d(selected_data, selected_label, with_anchor, task)
+        coord_noisy = data_concat_balanced[0]
+        kind_distributed = data_concat_balanced[1]
 
-        # Object kind information
-        kind_onehot = label_to_onehot(obj_kind)
-        kind_distributed = onehot_to_distributed(kind_onehot, u_kind, sigma_kind)
-        # Object anchor information
-        anchor_label = get_anchor(selected_label,task)
-        anchor_onehot = label_to_onehot(anchor_label)
-        anchor_distributed = onehot_to_distributed(anchor_onehot,  u_anchor, sigma_anchor)
 
         if with_anchor:
+            anchor_distributed = data_concat_balanced[2]
             selected_data_concat = np.concatenate((coord_noisy, kind_distributed, anchor_distributed), axis = 1)
         else:
             selected_data_concat = np.concatenate((coord_noisy, kind_distributed), axis = 1)
-        selected_data_concat_balanced, selected_labels_balanced = balance_data(selected_data_concat, selected_label_int)
         if i == 0:
-            data_concat = selected_data_concat_balanced
+            data_concat = selected_data_concat
+            label_concat = selected_label_balanced
         else:
             data_concat = np.append(data_concat, selected_data_concat, axis = 0)
-    return data_concat, selected_labels_balanced
+            label_concat = np.append(label_concat, selected_label_balanced, axis = 0)
+    return data_concat, label_concat
+
+def process_data_ssp(selected_data, selected_label, with_anchor, binding, aggregate, dim, wrap_feature = False, task = 'assembly'):
+    '''
+    '''
+
+    data_concat, selected_label_int = process_data_3d(selected_data, selected_label, with_anchor = True, task = task)
+    x_axis_sp = make_good_unitary(dim)
+    y_axis_sp = make_good_unitary(dim)
+    z_axis_sp = make_good_unitary(dim)
+
+    bolt_sp = make_good_unitary(dim)
+    nut_sp = make_good_unitary(dim)
+
+    table_sp = make_good_unitary(dim)
+    jig_sp = make_good_unitary(dim)
+    bin_origin_sp = make_good_unitary(dim)
+    bin_target_sp = make_good_unitary(dim)
+
+    tag1 = make_good_unitary(dim)
+    tag2 = make_good_unitary(dim)
+    tag3 = make_good_unitary(dim)
+
+    coord_noisy = data_concat[0]
+    kind_distributed = data_concat[1]
+    anchor_distributed = data_concat[2]
+    if task == 'assembly':
+
+        coord_sp = encode_feature(coord_noisy, [x_axis_sp, y_axis_sp, z_axis_sp], binding = binding[0], aggregate = aggregate[0])
+        kind_sp = encode_feature(kind_distributed, [nut_sp, bolt_sp], binding = binding[1], aggregate = aggregate[1])
+        anchor_sp = encode_feature(anchor_distributed, [table_sp, jig_sp], binding = binding[2], aggregate = aggregate[2])
+    elif task == 'bin_picking':
+        coord_sp = encode_feature(coord_noisy, [x_axis_sp, y_axis_sp, z_axis_sp], binding = binding[0], aggregate = aggregate[0])
+        kind_sp = encode_feature(kind_distributed, [nut_sp, bolt_sp], binding = binding[1], aggregate = aggregate[1])
+        anchor_sp = encode_feature(anchor_distributed, [bin_origin_sp, bin_target_sp], binding = binding[2], aggregate = aggregate[2])
+
+    if wrap_feature == True:
+        coord_sp = (tag1 * spa.SemanticPointer(coord_sp)).v
+        kind_sp = (tag2 * spa.SemanticPointer(kind_sp)).v
+        anchor_sp = (tag3 * spa.SemanticPointer(anchor_sp)).v
+    if with_anchor:
+        data_concat = [coord_sp, kind_sp, anchor_sp]
+    else:
+        data_concat = [coord_sp, kind_sp]
+    return data_concat, selected_label_int
+
+def process_batch_data_ssp(data, label, with_anchor, binding, aggregate, aggregate_between_feature, dim, wrap_feature = False, task = 'assembly'):
+    '''
+
+    '''
+    x_axis_sp = make_good_unitary(dim)
+    y_axis_sp = make_good_unitary(dim)
+    z_axis_sp = make_good_unitary(dim)
+
+    bolt_sp = make_good_unitary(dim)
+    nut_sp = make_good_unitary(dim)
+
+    table_sp = make_good_unitary(dim)
+    jig_sp = make_good_unitary(dim)
+    bin_origin_sp = make_good_unitary(dim)
+    bin_target_sp = make_good_unitary(dim)
+
+    tag1 = make_good_unitary(dim)
+    tag2 = make_good_unitary(dim)
+    tag3 = make_good_unitary(dim)
+
+    for i, _ in enumerate(data):
+        selected_data = np.array(list(itertools.chain.from_iterable(data[i])))
+        selected_label = np.array(list(itertools.chain.from_iterable(label[i])))
+        # selected_data_balanced, selected_label_balanced = balance_data(selected_data, selected_label)
+        if 'Noise data' in selected_label:
+            continue
+        selected_data_balanced, selected_label_int_balanced = process_data_3d(selected_data, selected_label, with_anchor = True, task = task)
+
+        coord_noisy = selected_data_balanced[0]
+        kind_distributed = selected_data_balanced[1]
+        anchor_distributed = selected_data_balanced[2]
+
+        if i == 0:
+            coord_noisy_concat = coord_noisy
+            kind_distributed_concat = kind_distributed
+            anchor_distributed_concat = anchor_distributed
+            label_concat = selected_label_int_balanced
+        else:
+            coord_noisy_concat = np.concatenate((coord_noisy_concat, coord_noisy))
+            kind_distributed_concat = np.concatenate((kind_distributed_concat, kind_distributed))
+            anchor_distributed_concat = np.concatenate((anchor_distributed_concat, anchor_distributed))
+            label_concat = np.concatenate((label_concat, selected_label_int_balanced))
+    if task == 'assembly':
+        # Anchor object information
+        coord_sp = encode_feature(coord_noisy_concat, [x_axis_sp, y_axis_sp, z_axis_sp], binding = binding[0], aggregate = aggregate[0])
+        kind_sp = encode_feature(kind_distributed_concat, [nut_sp, bolt_sp], binding = binding[1], aggregate = aggregate[1])
+        anchor_sp = encode_feature(anchor_distributed_concat, [table_sp, jig_sp], binding = binding[2], aggregate = aggregate[2])
+
+    elif task == 'bin_picking':
+        coord_sp = encode_feature(coord_noisy_concat, [x_axis_sp, y_axis_sp, z_axis_sp], binding = binding[0], aggregate = aggregate[0])
+        kind_sp = encode_feature(kind_distributed_concat, [nut_sp, bolt_sp], binding = binding[1], aggregate = aggregate[1])
+        anchor_sp = encode_feature(anchor_distributed_concat, [bin_origin_sp, bin_target_sp], binding = binding[2], aggregate = aggregate[2])
+    if wrap_feature == True:
+        coord_sp = (tag1 * spa.SemanticPointer(coord_sp)).v
+        kind_sp = (tag2 * spa.SemanticPointer(kind_sp)).v
+        anchor_sp = (tag3 * spa.SemanticPointer(anchor_sp)).v
+    if with_anchor:
+        data_concat = [coord_sp, kind_sp, anchor_sp]
+    else:
+        data_concat = [coord_sp, kind_sp]
+    data_encoded = encode_dataset(data_concat, aggregate_between_feature)
+
+    return data_encoded, label_concat
 
 def label_to_onehot(x):
     '''
@@ -488,90 +591,3 @@ def get_anchor(selected_label_balanced, task = 'assembly'):
         result[ind_bin_origin] = 0
         result[ind_bin_target] = 1
     return result
-
-def process_data_ssp(selected_data, selected_label, with_anchor, binding, aggregate, dim, wrap_feature = False, task = 'assembly'):
-    '''
-    This method process the 4-d data(3-d coordinates + 1-d object kind) by:
-     1. Balancing the data
-     2. Add anchor object information if needed
-     3. Add noise to coordinates
-     4. Change the index encoding(0 for nut, 1 for bolt) to distributed encodeing(ex. [0.8, 0.2] for nut and [0.9, 0.1] for bolt)
-    '''
-
-    u_coord = 0  # The average shift between the approximated coordinates and ground truth
-    sigma_coord = 0.006
-    u_kind = 0.1
-    sigma_kind = 0.05
-    u_anchor = 0.1
-    sigma_anchor= 0.05
-
-    selected_data_balanced, selected_label_balanced = balance_data(selected_data, selected_label)
-    selected_label_int = label_to_int(selected_label_balanced)
-
-    # Object coordinates information
-    coord = selected_data_balanced[:,0:3]
-    obj_kind = selected_data_balanced[:, 3]
-    noise = np.random.normal(u_coord, sigma_coord, coord.shape)
-    coord_noisy = coord + noise
-
-    # Object kind information
-    ind_nut = np.where(obj_kind == 0)[0]
-    ind_bolt = np.where(obj_kind == 1)[0]
-    n_data = coord.shape[0]
-    one_hot_kind = np.zeros((n_data,2))
-    one_hot_kind[np.arange(obj_kind.size),obj_kind.astype(int)] = 1
-    noise_kind = np.random.normal(u_kind, sigma_kind, obj_kind.size)
-    kind_noisy = abs(one_hot_kind - np.column_stack((noise_kind, noise_kind)))
-
-    assert dim is not None, 'Dimension of semantic pointer is not provided'
-    assert binding is not None, 'Binding types for each entry is not provided'
-    assert aggregate is not None, 'Aggregation types between features are not provided'
-    x_axis_sp = make_good_unitary(dim)
-    y_axis_sp = make_good_unitary(dim)
-    z_axis_sp = make_good_unitary(dim)
-
-    bolt_sp = make_good_unitary(dim)
-    nut_sp = make_good_unitary(dim)
-
-    table_sp = make_good_unitary(dim)
-    jig_sp = make_good_unitary(dim)
-    bin_origin_sp = make_good_unitary(dim)
-    bin_target_sp = make_good_unitary(dim)
-    if task == 'assembly':
-        # Anchor object information
-        ind_table = np.concatenate((np.where(selected_label_balanced == 'Nut on table')[0], np.where(selected_label_balanced == 'Bolt on table')[0]))
-        ind_jig = np.delete(np.arange(n_data), ind_table)
-        one_hot_anchor = np.zeros((n_data,2))
-        one_hot_anchor[ind_table,0] = 1
-        one_hot_anchor[ind_jig,1] = 1
-        noise_anchor = np.random.normal(u_anchor, sigma_anchor, obj_kind.size)
-        anchor_noisy = abs(one_hot_anchor - np.column_stack((noise_anchor, noise_anchor)))
-
-        coord_sp = encode_feature(coord_noisy, [x_axis_sp, y_axis_sp, z_axis_sp], binding = binding[0], aggregate = aggregate[0])
-        kind_sp = encode_feature(kind_noisy, [nut_sp, bolt_sp], binding = binding[1], aggregate = aggregate[1])
-        anchor_sp = encode_feature(anchor_noisy, [table_sp, jig_sp], binding = binding[2], aggregate = aggregate[2])
-
-    elif task == 'bin_picking':
-        ind_bin_origin = np.where(selected_label_balanced == 'Object in origin bin')[0]
-        ind_bin_target = np.delete(np.arange(n_data), ind_bin_origin)
-        one_hot_anchor = np.zeros((n_data,2))
-        one_hot_anchor[ind_bin_origin,0] = 1
-        one_hot_anchor[ind_bin_target,1] = 1
-        noise_anchor = np.random.normal(u_anchor, sigma_anchor, obj_kind.size)
-        anchor_noisy = abs(one_hot_anchor - np.column_stack((noise_anchor, noise_anchor)))
-        coord_sp = encode_feature(coord_noisy, [x_axis_sp, y_axis_sp, z_axis_sp], binding = binding[0], aggregate = aggregate[0])
-        kind_sp = encode_feature(kind_noisy, [nut_sp, bolt_sp], binding = binding[1], aggregate = aggregate[1])
-        anchor_sp = encode_feature(anchor_noisy, [bin_origin_sp, bin_target_sp], binding = binding[2], aggregate = aggregate[2])
-    tag1 = make_good_unitary(dim)
-    tag2 = make_good_unitary(dim)
-    tag3 = make_good_unitary(dim)
-
-    if wrap_feature == True:
-        coord_sp = (tag1 * spa.SemanticPointer(coord_sp)).v
-        kind_sp = (tag2 * spa.SemanticPointer(kind_sp)).v
-        anchor_sp = (tag3 * spa.SemanticPointer(anchor_sp)).v
-    if with_anchor:
-        data_concat = [coord_sp, kind_sp, anchor_sp]
-    else:
-        data_concat = [coord_sp, kind_sp]
-    return data_concat, selected_label_int
